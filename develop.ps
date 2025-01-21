@@ -1,1 +1,69 @@
+# Ensure the Az module is imported
+Import-Module Az -ErrorAction Stop
+
+# Set colors for user interaction
+$infoColor = "Cyan"
+$warningColor = "Yellow"
+$errorColor = "Red"
+
+# Function to confirm user actions
+function Confirm-Action {
+    param (
+        [string]$Message
+    )
+    Write-Host $Message -ForegroundColor $warningColor
+    $response = Read-Host "Type 'yes' to proceed, anything else to skip"
+    return $response -eq "yes"
+}
+
+# Identify stopped (deallocated) VMs
+Write-Host "Checking for stopped (deallocated) virtual machines..." -ForegroundColor $infoColor
+$stoppedVMs = Get-AzVM -Status | Where-Object { $_.PowerState -eq "VM deallocated" }
+
+if ($stoppedVMs) {
+    Write-Host "Found the following stopped (deallocated) virtual machines:" -ForegroundColor $warningColor
+    $stoppedVMs | Select-Object Name, ResourceGroupName, Location, PowerState | Format-Table
+    if (Confirm-Action "Do you want to delete these stopped (deallocated) virtual machines?") {
+        $stoppedVMs | ForEach-Object {
+            Write-Host "Deleting VM: $($_.Name)" -ForegroundColor $warningColor
+            Remove-AzVM -ResourceGroupName $_.ResourceGroupName -Name $_.Name -Force
+        }
+    }
+} else {
+    Write-Host "No stopped (deallocated) virtual machines found." -ForegroundColor $infoColor
+}
+
+# Identify unused public IPs
+Write-Host "Checking for unused public IP addresses..." -ForegroundColor $infoColor
+$unusedIPs = Get-AzPublicIpAddress | Where-Object { $_.IpConfiguration -eq $null }
+if ($unusedIPs) {
+    Write-Host "Found the following unused public IPs:" -ForegroundColor $warningColor
+    $unusedIPs | Select-Object Name, Location, PublicIpAddress | Format-Table
+    if (Confirm-Action "Do you want to delete these unused public IPs?") {
+        $unusedIPs | ForEach-Object {
+            Write-Host "Deleting public IP: $($_.Name)" -ForegroundColor $warningColor
+            Remove-AzPublicIpAddress -ResourceGroupName $_.ResourceGroupName -Name $_.Name -Force
+        }
+    }
+} else {
+    Write-Host "No unused public IPs found." -ForegroundColor $infoColor
+}
+
+# Identify empty resource groups
+Write-Host "Checking for empty resource groups..." -ForegroundColor $infoColor
+$emptyResourceGroups = Get-AzResourceGroup | Where-Object { -not (Get-AzResource -ResourceGroupName $_.ResourceGroupName) }
+if ($emptyResourceGroups) {
+    Write-Host "Found the following empty resource groups:" -ForegroundColor $warningColor
+    $emptyResourceGroups | Select-Object ResourceGroupName, Location | Format-Table
+    if (Confirm-Action "Do you want to delete these empty resource groups?") {
+        $emptyResourceGroups | ForEach-Object {
+            Write-Host "Deleting resource group: $($_.ResourceGroupName)" -ForegroundColor $warningColor
+            Remove-AzResourceGroup -Name $_.ResourceGroupName -Force
+        }
+    }
+} else {
+    Write-Host "No empty resource groups found." -ForegroundColor $infoColor
+}
+
+Write-Host "Resource cleanup script completed!" -ForegroundColor $infoColor
 
